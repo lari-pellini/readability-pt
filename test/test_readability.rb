@@ -8,8 +8,23 @@ class ReadabilityPTTest < Minitest::Test
   def test_portuguese_syllables
     {
       "casa" => 2, "computador" => 4, "saúde" => 3, "país" => 2, "leão" => 2,
-      "coração" => 3, "coelho" => 3, "Paulo" => 2, "quero" => 2, "fotógrafo" => 4, "é" => 1
+      "coração" => 3, "coelho" => 3, "Paulo" => 2, "quero" => 2, "fotógrafo" => 4, "é" => 1,
+      # Hiatus: a high vowel that carries the stress is a nucleus, not a glide.
+      "rainha" => 3, "fotografia" => 5, "saída" => 3, "ruína" => 3,
+      "Maria" => 3, "poesia" => 4, "mania" => 3, "atua" => 3, "continua" => 4,
+      "ruim" => 2, "juiz" => 2, "raiz" => 2, "sair" => 2, "cair" => 2, "ainda" => 3,
+      # Rising diphthongs stay together.
+      "dia" => 1, "rua" => 1, "pai" => 1, "caixa" => 2, "história" => 3,
+      "família" => 3, "diabo" => 2, "médio" => 2,
+      # An unstressed high vowel after another vowel glides onto it.
+      "cheia" => 2, "cheio" => 2, "meio" => 2, "praia" => 2, "saiu" => 2
     }.each do |word, expected|
+      assert_equal expected, ReadabilityPT.syllables_pt(word), word
+    end
+  end
+
+  def test_portuguese_syllables_silent_u_after_q_and_g
+    { "guerra" => 2, "quase" => 2, "aquecer" => 3, "sequência" => 3 }.each do |word, expected|
       assert_equal expected, ReadabilityPT.syllables_pt(word), word
     end
   end

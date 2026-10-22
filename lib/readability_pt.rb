@@ -6,8 +6,13 @@ module ReadabilityPT
 
   VOWELS = "aeiouáéíóúâêôãõàüy"
   STRONG = "aeoáéóâêôãõà"
-  HIATUS_MARKERS = "íú"
+  HIGH = "iuíúü"
+  STRESS_MARK = "áâéêíóôúãõ"
   NASAL = "ãõ"
+  # Unaccented words whose stress falls on a high vowel instead of gliding it.
+  # Portuguese spelling does not mark that stress, so it has to be listed.
+  HIATUS_WORDS = %w[rainha ainda sair cair raiz juiz ruim].freeze
+  PAROXYTONE_ENDING = /(?:[aeo]|em|ens)\z/.freeze
 
   # Martins et al. (1996) bands for Portuguese.
   BANDS_PT = [[75, "muito fácil"], [50, "fácil"], [25, "difícil"], [0, "muito difícil"]].freeze
@@ -35,18 +40,66 @@ module ReadabilityPT
   end
 
   # Heuristic syllable counter for Portuguese: one syllable per vowel group,
-  # plus a break inside the group for common hiatus patterns
-  # ("sa-ú-de", "pa-ís", "le-ão", "co-e-lho"). Diphthongs like "ão", "ai", "ou" stay together.
+  # plus a break inside the group when a high vowel ("i", "u") is a nucleus
+  # instead of a glide ("ra-i-nha", "fo-to-gra-fi-a", "sa-í-de", "prai-a").
+  # Diphthongs like "ão", "dia" and "cai" stay together.
   def syllables_pt(word)
-    groups = word.downcase.scan(/[#{VOWELS}]+/o)
+    # The "u" of "que", "gue", "gui" is silent, not a syllable nucleus.
+    w = word.downcase.gsub(/([qg])[uü](?=[ei])/, '\1')
+    indices = (0...w.length).select { |i| VOWELS.include?(w[i]) }
+    groups = indices.slice_when { |a, b| b != a + 1 }.to_a
+    return 1 if groups.empty?
+
+    stress = stressed_vowel(w, groups)
     count = groups.sum do |group|
-      breaks = group.chars.each_cons(2).count do |a, b|
-        HIATUS_MARKERS.include?(b) || (STRONG.include?(a) && STRONG.include?(b) && !NASAL.include?(a))
+      1 + group.each_cons(2).count do |i, j|
+        a = w[i]
+        b = w[j]
+        # Two strong vowels in a row are two nuclei: "co-e-lho", "le-ão".
+        hiatus = STRONG.include?(a) && STRONG.include?(b) && !NASAL.include?(a)
+        # A high vowel that carries the stress is a nucleus, not a glide:
+        # "ra-i-nha", "fo-to-gra-fi-a", "sa-í-de".
+        hiatus ||= HIGH.include?(b) && j == stress
+        hiatus ||= HIGH.include?(a) && i == stress && STRONG.include?(b)
+        # An unstressed high vowel that follows another vowel in the same group
+        # glides onto it, and the next vowel starts a new syllable:
+        # "prai-a", "chei-o", "sa-iu".
+        hiatus ||= HIGH.include?(a) && i != group.first && i != stress
+        hiatus
       end
-      1 + breaks
     end
     [count, 1].max
   end
+
+  # Index (into w) of the stressed vowel, approximated from accent marks and
+  # from the paroxytone/oxytone shape of the word.
+  def stressed_vowel(w, groups)
+    last = groups.last
+    # Nasal diphthongs ("-ão", "-ãe", "-õe") always stress the nasal vowel.
+    return last.first if NASAL.include?(w[last.first])
+    # An accent mark always shows the stress.
+    accented = w.index(/[#{STRESS_MARK}]/)
+    return accented if accented
+    if HIATUS_WORDS.include?(w)
+      high = groups.flat_map { |g| g.drop(1) }.find { |i| HIGH.include?(w[i]) }
+      return high if high
+    end
+    # Unaccented paroxytones ending in a rising pair ("-ia", "-io", "-ua")
+    # stress the high vowel: "fo-to-gra-fi-a", "Ma-ri-a", "a-tu-a".
+    if groups.size > 1 && last.size == 2 && HIGH.include?(w[last.first]) &&
+       STRONG.include?(w[last.last]) && !oxytone?(w)
+      return last.first
+    end
+    # Otherwise the stress falls on the penultimate group, or the last one for
+    # oxytones.
+    stressed = oxytone?(w) || groups.size == 1 ? groups.last : groups[-2]
+    stressed.find { |i| STRONG.include?(w[i]) } || stressed.first
+  end
+
+  def oxytone?(w)
+    !w.match?(PAROXYTONE_ENDING)
+  end
+  private_class_method :stressed_vowel, :oxytone?
 
   # Classic English heuristic: vowel groups, minus a silent final "e".
   def syllables_en(word)
